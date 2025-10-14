@@ -115,6 +115,13 @@ class BTTVWebSocket {
         });
     }
 
+    disconnect() {
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+        }
+    }
+
     /**
     * Subscribe to BTTV channel events.
     *
