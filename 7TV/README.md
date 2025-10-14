@@ -4,12 +4,12 @@ This documentation was written with the assistance of Claude and ChatGPT, as Eng
 ## Table of Contents
 
 1. [How to use the 7TV client](#how-to-use-the-7tv-client)
-2. [Settings / Options](#settings--options)
+2. [Settings / Options](#settingsoptions)
 3. [Events Emitted](#events-emitted)
 
    * [Emote/Set Events](#emoteset-events)
    * [Cosmetic/Entitlement Events](#cosmeticentitlement-events)
-4. [Subscribe to a specific event](#subscribe-to-a-specific-event)
+4. [Subscribe to a specific event](#subscribeunsubscribe)
 
    * [Parameters](#parameters)
    * [Returns](#returns)
@@ -33,9 +33,17 @@ const SevenTVWebSocket = require('./websocket.js'); // CommonJS (CJS)
 const client = new SevenTVWebSocket({
     // your settings here
 });
+
+client.connect();
+```
+[How to subscribe to a specific event](#subscribeunsubscribe)
+
+### To disconnect
+```javascript
+client.disconnect();
 ```
 
-## Settings / Options
+## Settings/Options
 When creating a new `SevenTVWebSocket` instance, you can pass an options object with the following properties:
 
 - `reconnect` (boolean, default: `false`)  
@@ -48,8 +56,11 @@ When creating a new `SevenTVWebSocket` instance, you can pass an options object 
   Automatically subscribe to new emote sets when a user's set changes.
 - `resubscribeOnReconnect` (boolean, default: `true`)  
   Resubscribe to all previously subscribed topics after reconnecting.
+- `resubscribeInterval` (number, default: `500`)  
+  Delay in milliseconds between re-subscribing to each channel after reconnecting.
 
 ## Events Emitted
+- `opening` - The WebSocket connection is open, but resubscriptions haven’t been completed yet
 - `open` - WebSocket connection opened  
 - `close` - WebSocket connection closed  
 - `error` - WebSocket encountered an error  
@@ -72,12 +83,14 @@ When creating a new `SevenTVWebSocket` instance, you can pass an options object 
 - `create_badge` - New badge created (`badge`)  
 - `create_paint` - New paint created (`paint`)
 
-## Subscribe to a specific event
-Subscribe to a specific event type for a set or user.
+## Subscribe/Unsubscribe
+Subscribe to a Twitch channel to receive emote events:
 
 ```javascript
 client.subscribe(id, type);
+client.unsubscribe(id, type);
 ```
+- Passing true as the last argument forces the subscription.
 
 ### Parameters
 - `id` (string or number) - ID needed for a given event type:
@@ -133,7 +146,6 @@ client.subscribe(id, type);
 ```
 
 ### Set/Personal Set
-
 ```json
 {
   "id": "string",
@@ -144,7 +156,6 @@ client.subscribe(id, type);
 ```
 
 ### Create Cosmetic
-
 ```json
 {
   "id": "string",          // Unique ID of the cosmetic
@@ -162,7 +173,6 @@ client.subscribe(id, type);
 ```
 
 ### Badge
-
 ```json
 {
   "id": "string",          // Unique badge ID
@@ -179,7 +189,6 @@ client.subscribe(id, type);
 ```
 
 ### Paint
-
 ```json
 {
   "id": "string",            // Unique paint ID
@@ -195,7 +204,6 @@ client.subscribe(id, type);
 ```
 
 ### Set Change Event
-
 ```json
 {
   "old_set": { "id": "string", "name": "string" },
@@ -205,7 +213,6 @@ client.subscribe(id, type);
 ```
 
 ### Actor (User performing the action)
-
 ```json
 {
   "username": "string",

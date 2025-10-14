@@ -104,9 +104,75 @@ async function getUserViaTwitchID(twitchID) {
     }
 }
 
+async function parseBadge(badge_data) {
+    const hosts = badge_data.host;
+
+    const urls = (hosts?.files || [])
+        .filter(f => f.format === (hosts.files?.[0]?.format))
+        .map(file => ({
+            url: `https:${hosts.url}/${file.name}`,
+            scale: file.name.replace(/\.[^/.]+$/, "").toLowerCase()
+        }));
+
+    return {
+        id: badge_data.id,
+        name: badge_data.name,
+        tooltip: badge_data.tooltip,
+        owner: [],
+        urls,
+    };
+}
+
+async function parsePaint(paint_data) {
+    const baseFunction = paint_data.repeat ? `repeating-${paint_data.function}` : paint_data.function;
+    const gradientFunction = baseFunction?.toLowerCase().replace(/_/g, "-");
+    const hasStops = paint_data.stops?.length > 0;
+    const isLinear = ["linear-gradient", "repeating-linear-gradient"].includes(gradientFunction);
+
+    let gradient = "";
+    if (hasStops) {
+        const normalized = paint_data.stops.map(stop =>
+            `${argbToRgba(stop.color)} ${stop.at * 100}%`
+        ).join(', ');
+
+        const direction = isLinear ? `${paint_data.angle}deg` : paint_data.shape;
+        gradient = `${gradientFunction}(${direction}, ${normalized})`;
+    }
+
+    let paint_message = {
+        id: paint_data.id,
+        name: paint_data.name,
+        style: gradientFunction,
+        shape: paint_data.shape,
+        backgroundImage: hasStops
+            ? gradient
+            : `url('${paint_data.image_url}')`,
+        shadows: null,
+        KIND: hasStops ? 'non-animated' : 'animated',
+        owner: [],
+        url: paint_data.image_url
+    };
+
+    if (paint_data.shadows?.length) {
+        const shadows = await Promise.all(paint_data.shadows.map(s => {
+            let rgbaColor = argbToRgba(s.color);
+            rgbaColor = rgbaColor.replace(/rgba\((\d+), (\d+), (\d+), (\d+(\.\d+)?)\)/, 'rgba($1, $2, $3)');
+            return `drop-shadow(${rgbaColor} ${s.x_offset}px ${s.y_offset}px ${s.radius}px)`;
+        }));
+
+        paint_message.shadows = shadows.join(' ');
+    }
+
+    return paint_message;
+}
+
 export default {
     parseSetData,
     getUserViaTwitchID,
+    parse: {
+        badge: parseBadge,
+        paint: parsePaint
+    },
     emoteSet: {
         bySetID: emoteSetViaSetID,
         byTwitchID: emoteSetViaTwitchID,

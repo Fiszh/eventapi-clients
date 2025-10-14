@@ -4,12 +4,12 @@ This documentation was written with the assistance of Claude and ChatGPT, as Eng
 ## Table of Contents
 
 1. [How to use the BTTV client](#how-to-use-the-bttv-client)
-2. [Settings / Options](#settings--options)
+2. [Settings/Options](#settings-options)
 3. [Events Emitted](#events-emitted)
 
    * [Emote Events](#emote-events)
-   * [⚠ Note on Emote Event Data](#-note-on-emote-event-data)
-4. [Subscribe / Unsubscribe](#subscribe--unsubscribe)
+   * [⚠ Note on Emote Event Data](#note-on-emote-event-data)
+4. [Subscribe/Unsubscribe](#subscribeunsubscribe)
 
    * [Returns](#returns)
    * [Notes](#notes)
@@ -17,11 +17,10 @@ This documentation was written with the assistance of Claude and ChatGPT, as Eng
 
    * [Parsed Emote](#parsed-emote)
    * [Actor (User performing the action)](#actor-user-performing-the-action)
-
+   
 ---
 
 ## How to use the BTTV client
-
 ```javascript
 import BTTVWebSocket from './websocket.js'; // ES Modules (ESM)
 const BTTVWebSocket = require('./websocket.js'); // CommonJS (CJS)
@@ -29,23 +28,32 @@ const BTTVWebSocket = require('./websocket.js'); // CommonJS (CJS)
 const client = new BTTVWebSocket({
     // your settings here
 });
+
+client.connect();
+```
+[How to subscribe to a specific event](#subscribeunsubcribe)
+
+### To disconnect
+```javascript
+client.disconnect();
 ```
 
-## Settings / Options
+## Settings/Options
+When creating a new zBTTVWebSocket` instance, you can pass an options object with the following properties:
 
-When creating a new `BTTVWebSocket` instance, you can pass an options object with the following properties:
-
-* `reconnect` (boolean, default: `false`)
+* `reconnect` (boolean, default: `false`)  
   Automatically reconnect when the WebSocket closes.
-* `reconnectInterval` (number, default: `1000`)
+* `reconnectInterval` (number, default: `1000`)  
   Time in milliseconds between reconnect attempts.
-* `maxReconnectAttempts` (number, default: `Infinity`)
+* `maxReconnectAttempts` (number, default: `Infinity`)  
   Maximum number of reconnect attempts before giving up.
-* `resubscribeOnReconnect` (boolean, default: `true`)
+* `resubscribeOnReconnect` (boolean, default: `true`)  
   Resubscribe to all previously subscribed channels after reconnecting.
+* `resubscribeInterval` (number, default: `500`)  
+  Delay in milliseconds between re-subscribing to each channel after reconnecting.
 
 ## Events Emitted
-
+* `opening` - The WebSocket connection is open, but resubscriptions haven’t been completed yet
 * `open` - WebSocket connection opened
 * `close` - WebSocket connection closed
 * `error` - WebSocket encountered an error
@@ -56,12 +64,11 @@ When creating a new `BTTVWebSocket` instance, you can pass an options object wit
 * `unsubscribed` - Successfully unsubscribed from a Twitch channel
 
 ### Emote Events
-
 * `add_emote` - Emote added (`twitchId`, `parsed_emote`)
 * `remove_emote` - Emote removed (`twitchId`, `emote_id`)
 * `rename_emote` - Emote renamed (`twitchId`, `emote_data`)
 
-### ⚠ Note on Emote Event Data
+### Note on Emote Event Data
 
 The data structure for BTTV emote events is **not uniform**:
 
@@ -71,29 +78,26 @@ The data structure for BTTV emote events is **not uniform**:
 
 Make sure to handle each case accordingly in your event listeners.
 
-## Subscribe / Unsubscribe
-
+## Subscribe/Unsubscribe
 Subscribe to a Twitch channel to receive emote events:
 
 ```javascript
 client.subscribe(twitchId);   // Twitch user ID
 client.unsubscribe(twitchId); // Twitch user ID
 ```
+- Passing true as the last argument forces the subscription.
 
 ### Returns
-
 * `true` if subscription/unsubscription succeeds
 * Throws an error if the ID is missing or already subscribed/unsubscribed
 
 ### Notes
-
 * BTTV subscriptions only need the Twitch ID; event type is automatic.
 * Works with `resubscribeOnReconnect` if enabled.
 
 ## Data Models
 
 ### Parsed Emote
-
 ```json
 {
   "name": "string",            // Emote code
@@ -113,7 +117,6 @@ client.unsubscribe(twitchId); // Twitch user ID
 ```
 
 ### Actor (User performing the action)
-
 ```json
 {
   "username": "string",

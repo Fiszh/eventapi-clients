@@ -1,5 +1,5 @@
 import main from './main.js';
-const { parseSetData } = main;
+const { parseSetData, parse: { badge: parseBadge, paint: parsePaint } } = main;
 
 const id_types = {
     'entitlement.create': "id", // COSMETICS
@@ -21,6 +21,7 @@ class SevenTVWebSocket {
             maxReconnectAttempts: options.maxReconnectAttempts || Infinity,
             autoSubscribeToNewSetId: options.autoSubscribeToNewSetId ?? true,
             resubscribeOnReconnect: options.resubscribeOnReconnect ?? true,
+            resubscribeInterval: options.resubscribeInterval ?? 500,
         };
         this.subscriptions = {};
         this.caughtPersonalSets = [];
@@ -40,21 +41,24 @@ class SevenTVWebSocket {
     connect() {
         this.ws = new WebSocket(this.url);
 
-        this.ws.addEventListener('open', () => {
-            console.log("7TV WS OPEN");
-            this.emit("open");
-
+        this.ws.addEventListener('open', async () => {
             // RESUB TO EVERY TOPIC
             if (this.setting.resubscribeOnReconnect) {
+                console.log("7TV WS OPENING");
+                this.emit("opening");
+
                 for (const id in this.subscriptions) {
                     for (const type in this.subscriptions[id]) {
                         const condition = this.subscriptions[id][type];
-                        if (!this.subscriptions[id]?.[type]) {
-                            this.subscribe(id, type, condition);
-                        }
+                        this.subscribe(id, type, condition, true);
+                        await new Promise(resolve => setTimeout(resolve, this.reconnectInterval)); // WAIT 500MS SO THE WEBSOCKET DOESNT GET SPAMMED
                     }
                 }
             }
+
+            // CALL OPEN AFTER RESUBBED TO EVERY TOPIC
+            console.log("7TV WS OPEN");
+            this.emit("open");
         });
 
         this.ws.addEventListener('message', async (event) => {
@@ -159,68 +163,16 @@ class SevenTVWebSocket {
                     switch (message_body.object.kind) {
                         case "BADGE":
                             const badge_data = message_body.object.data;
-                            const hosts = badge_data.host;
+                            if (!badge_data) { return; };
 
-                            const urls = (hosts?.files || [])
-                                .filter(f => f.format === (hosts.files?.[0]?.format))
-                                .map(file => ({
-                                    url: `https:${hosts.url}/${file.name}`,
-                                    scale: file.name.replace(/\.[^/.]+$/, "").toLowerCase()
-                                }));
-
-                            this.emit("create_badge", {
-                                id: badge_data.id,
-                                name: badge_data.name,
-                                tooltip: badge_data.tooltip,
-                                owner: [],
-                                urls,
-                            });
+                            this.emit("create_badge", await parseBadge(badge_data));
 
                             break;
                         case "PAINT":
-                            const paint_data = message_body.object.data;
+                            let paint_data = message_body.object.data;
                             if (!paint_data) { return; };
 
-                            const hasStops = paint_data.stops?.length > 0;
-                            const isLinear = ["linear-gradient", "repeating-linear-gradient"].includes(paint_data.function);
-                            const baseFunction = paint_data.repeat ? `repeating-${paint_data.function}` : paint_data.function;
-                            const gradientFunction = baseFunction?.toLowerCase().replace('_', '-');
-
-                            let gradient = "";
-                            if (hasStops) {
-                                const normalized = paint_data.stops.map(stop =>
-                                    `${argbToRgba(stop.color)} ${stop.at * 100}%`
-                                ).join(', ');
-
-                                const direction = isLinear ? `${paint_data.angle}deg` : paint_data.shape;
-                                gradient = `${gradientFunction}(${direction}, ${normalized})`;
-                            }
-
-                            let paint_message = {
-                                id: paint_data.id,
-                                name: paint_data.name,
-                                style: gradientFunction,
-                                shape: paint_data.shape,
-                                backgroundImage: hasStops
-                                    ? gradient
-                                    : `url('${paint_data.image_url}')`,
-                                shadows: null,
-                                KIND: hasStops ? 'non-animated' : 'animated',
-                                owner: [],
-                                url: paint_data.image_url
-                            };
-
-                            if (paint_data.shadows?.length) {
-                                const shadows = await Promise.all(paint_data.shadows.map(s => {
-                                    let rgbaColor = argbToRgba(s.color);
-                                    rgbaColor = rgbaColor.replace(/rgba\((\d+), (\d+), (\d+), (\d+(\.\d+)?)\)/, 'rgba($1, $2, $3)');
-                                    return `drop-shadow(${rgbaColor} ${s.x_offset}px ${s.y_offset}px ${s.radius}px)`;
-                                }));
-
-                                paint_message.shadows = shadows.join(' ');
-                            }
-
-                            this.emit("create_paint", paint_message);
+                            this.emit("create_paint", await parsePaint(paint_data));
 
                             break;
                         default:
@@ -228,7 +180,7 @@ class SevenTVWebSocket {
 
                             break;
                     }
-                    
+
                     break;
                 case "emote_set.create":
                     const set_object = message_body.object;
@@ -255,6 +207,7 @@ class SevenTVWebSocket {
 
                     break;
                 case "entitlement.create":
+                case "entitlement.delete":
                     const entitlement_object = message_body.object;
 
                     const entitlement_data = {
@@ -263,7 +216,7 @@ class SevenTVWebSocket {
                         owner: entitlement_object.user?.connections?.find(c => c.platform === "TWITCH"),
                     };
 
-                    this.emit("create_entitlement", entitlement_data);
+                    this.emit(`${message_data.type.split(".")[1]}_entitlement`, entitlement_data);
 
                     break;
                 default:
@@ -292,12 +245,38 @@ class SevenTVWebSocket {
         });
     }
 
-    async subscribe(id, type) {
-        if (!id) { throw new Error("Missing 'id' parameter"); };
-        if (!type) { throw new Error("Missing 'type' parameter"); };
+    disconnect() {
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+        }
+    }
 
-        if (this.subscriptions?.[id]?.[type]) {
-            throw new Error(`Already subscribed`);
+    async subscribe(id, type, force) {
+        if (!id) throw new Error("Missing 'id' parameter");
+        if (!type) throw new Error("Missing 'type' parameter");
+
+        if (this.subscriptions?.[id]?.[type] && !force) {
+            throw new Error("Already subscribed");
+        }
+
+        if (this.ws.readyState !== this.ws.OPEN) {
+            await new Promise((resolve, reject) => {
+                const handleOpen = () => {
+                    cleanup();
+                    resolve();
+                };
+                const handleClose = () => {
+                    cleanup();
+                    reject(new Error("WebSocket closed before subscription"));
+                };
+                const cleanup = () => {
+                    this.ws.removeEventListener("open", handleOpen);
+                    this.ws.removeEventListener("close", handleClose);
+                };
+                this.ws.addEventListener("open", handleOpen);
+                this.ws.addEventListener("close", handleClose);
+            });
         }
 
         let id_type = { id };

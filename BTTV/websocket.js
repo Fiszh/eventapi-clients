@@ -11,6 +11,7 @@ class BTTVWebSocket {
     * @property {number} [reconnectInterval=1000] - Time in ms between reconnect attempts
     * @property {number} [maxReconnectAttempts=Infinity] - Max number of reconnect tries before giving up
     * @property {boolean} [resubscribeOnReconnect=true] - Re-subscribe to previous subscriptions after reconnecting
+    * @property {number} [resubscribeInterval=500] - Delay (ms) between re-subscribing to previous subscriptions after reconnecting
     */
     constructor(options = {}) {
         this.url = 'wss://sockets.betterttv.net/ws';
@@ -20,6 +21,7 @@ class BTTVWebSocket {
             reconnectInterval: options.reconnectInterval || 1000,
             maxReconnectAttempts: options.maxReconnectAttempts || Infinity,
             resubscribeOnReconnect: options.resubscribeOnReconnect ?? true,
+            resubscribeInterval: options.resubscribeInterval ?? 500,
         };
         this.subscriptions = [];
         this.listeners = {};
@@ -42,14 +44,20 @@ class BTTVWebSocket {
         this.ws = new WebSocket(this.url);
 
         this.ws.addEventListener('open', async (event) => {
-            console.log("BTTV WS OPEN");
-            this.emit("open");
-
+            // RESUB TO EVERY TOPIC
             if (this.setting.resubscribeOnReconnect) {
+                console.log("BTTV WS OPENING");
+                this.emit("opening");
+
                 for (const id in this.subscriptions) {
                     this.subscribe(id);
+                    await new Promise(resolve => setTimeout(resolve, this.reconnectInterval)); // WAIT 500MS SO THE WEBSOCKET DOESNT GET SPAMMED
                 }
             }
+
+            // CALL OPEN AFTER RESUBBED TO EVERY TOPIC
+            console.log("BTTV WS OPEN");
+            this.emit("open");
         });
 
         this.ws.addEventListener('message', async (event) => {
