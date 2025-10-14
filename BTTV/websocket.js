@@ -120,11 +120,30 @@ class BTTVWebSocket {
     *
     * @param {string} id - Twitch user id.
     */
-    async subscribe(id) {
+    async subscribe(id, force) {
         if (!id) { throw new Error("Missing 'id' parameter"); };
 
-        if (this.subscriptions?.includes(id)) {
+        if (this.subscriptions?.includes(id) && !force) {
             throw new Error(`Already subscribed`);
+        }
+
+        if (this.ws.readyState !== this.ws.OPEN) {
+            await new Promise((resolve, reject) => {
+                const handleOpen = () => {
+                    cleanup();
+                    resolve();
+                };
+                const handleClose = () => {
+                    cleanup();
+                    reject(new Error("WebSocket closed before subscription"));
+                };
+                const cleanup = () => {
+                    this.ws.removeEventListener("open", handleOpen);
+                    this.ws.removeEventListener("close", handleClose);
+                };
+                this.ws.addEventListener("open", handleOpen);
+                this.ws.addEventListener("close", handleClose);
+            });
         }
 
         const message = {
@@ -136,7 +155,9 @@ class BTTVWebSocket {
 
         this.ws.send(JSON.stringify(message));
 
-        this.subscriptions.push(id);
+        if (!this.subscriptions.includes(id)) {
+            this.subscriptions.push(id);
+        }
 
         this.emit("subscribed", id);
 
